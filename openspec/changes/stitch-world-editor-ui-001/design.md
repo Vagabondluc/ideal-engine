@@ -4,8 +4,8 @@ This document captures architectural reasoning, interactions between components,
 
 High-level architecture
 -----------------------
-- UI layer: `src/ui.py` (Gradio Blocks) — mounts layout and wires handlers.
-- Domain logic: `scripts/world_builder.py` — persistence, versions, drafts, action handlers.
+- UI layer: `src/ui.py` (Gradio Blocks) — mounts layout and wires handlers. Enforces **UI Contract** (Tabs for Generate vs Editor).
+- Domain logic: `src/world_builder.py` — persistence, versions, drafts, action handlers. Migrated from legacy scripts/.
 - Runner: `src/runner.py` — Ollama runner wrapper; AI-assist flows use this.
 - Tests: `tests/*` — unit tests for Python handlers, smoke tests for `create_app()`. E2E tests to run against running Gradio app.
 
@@ -16,7 +16,8 @@ Client-side interactions
 
 Safety & sandboxing
 --------------------
-- `open_folder` must be restricted to workspace `.` and `world_db` subtree (already implemented server-side in `scripts/world_builder.open_folder`). UI will not override these checks.
+- **UI Contract**: Hard separation between `Generate` (low safety, candidate creation) and `World Editor` (high safety, canonical truth).
+- `open_folder` must be restricted to workspace `.` and `world_db` subtree (already implemented server-side in `src/world_builder.open_folder`). UI will not override these checks.
 - Retry flows should use `RETRY_REGISTRY` with opaque retry IDs; UI only repeats the retry request by providing the retry id.
 
 Test strategy

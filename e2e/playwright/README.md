@@ -8,7 +8,7 @@ Quickstart (local):
    npx playwright install
 
 2) Start the test app (in a separate terminal):
-   python scripts/start_test_app.py
+   python -m src.start_test_app
 
 3) Run tests:
    npx playwright test

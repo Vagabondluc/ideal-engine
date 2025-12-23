@@ -1,0 +1,138 @@
+{
+  "title": "UI Contract Checklist - stitch-world-editor-ui-001",
+  "version": "1.1",
+  "global_rule": {
+    "rule_0": "HARD_SEPARATION",
+    "description": "Exactly two modes: Generate and World Editor. No control may exist in both modes unless explicitly listed.",
+    "assertion": "controls_present_in_both_modes.length == 0"
+  },
+  "modes": {
+    "generate": {
+      "purpose": "create candidate content; nothing saved unless explicitly promoted",
+      "safety": "low",
+      "keep": [
+        "prompt_editor",
+        "script_selector",
+        "ollama_model_selector",
+        "temperature_slider",
+        "run_model_button",
+        "model_output_readonly",
+        "promote_to_world_database_button",
+        "world_database_read_only_preview"
+      ],
+      "remove": [
+        "canonical_editor",
+        "version_controls",
+        "ai_assist_scoped_tools",
+        "save_button",
+        "revert_button"
+      ],
+      "add": [
+        "banner_mode_generate"
+      ],
+      "acceptance_tests": [
+        "presence: banner_mode_generate visible",
+        "absence: any version_control buttons not visible in generate mode",
+        "generate_model_run_succeeds_and_does_not_modify_canon_by_default"
+      ]
+    },
+    "world_editor": {
+      "purpose": "maintain canonical truth; explicit actions and versioned",
+      "safety": "high",
+      "keep": [
+        "world_tree_browser",
+        "file_selector",
+        "canonical_editor",
+        "save_button",
+        "revert_button",
+        "save_as_new_version_button",
+        "version_selector",
+        "load_version_button",
+        "restore_draft_button",
+        "activity_log",
+        "context_banner"
+      ],
+      "locks": [
+        "version_read_only: if path starts with .versions/, editor is read-only",
+        "version_action_gate: if path starts with .versions/, hide save/revert/ai-assist",
+        "restore_flow: if path starts with .versions/, show 'Restore as New Canon Version'",
+        "dirty_state_gate: save/revert only visible when editor is dirty"
+      ],
+      "remove": [
+        "prompt_editor",
+        "run_model_button",
+        "ollama_model_selector",
+        "temperature_slider",
+        "model_output_pane"
+      ],
+      "add": [
+        "banner_mode_editor",
+        "restore_as_canon_button"
+      ],
+      "acceptance_tests": [
+        "presence: banner_mode_editor visible",
+        "absence: run_model_button not visible in editor mode",
+        "lock: editor is read-only when viewing .versions/ path",
+        "lock: save_button hidden when viewing .versions/ path"
+      ]
+    }
+  },
+  "ai_assist_contract": {
+    "rules": [
+      "never_auto_apply_changes",
+      "operates_on_selection_only",
+      "available_in_world_editor_only",
+      "disabled_on_historical_versions"
+    ],
+    "acceptance_tests": [
+      "ai_assist_does_not_modify_document_without_user_confirm",
+      "ai_assist_hidden_on_version_paths"
+    ]
+  },
+  "one_line_safety_test": {
+    "question": "If I click this right now, could I accidentally change canon?",
+    "rules": [
+      "if_yes -> control_belongs_to_world_editor",
+      "if_no -> may_belong_to_generate"
+    ]
+  }
+}
+    "acceptance_tests": [
+      "default_view_hides_internals",
+      "advanced_toggle_reveals_internals"
+    ]
+  },
+  "ai_assist_contract": {
+    "rules": [
+      "never_auto_apply_changes",
+      "never_touch_full_document_by_default",
+      "operates_on_selection_only",
+      "produces_diff_or_suggestion_review",
+      "available_in_world_editor_only"
+    ],
+    "acceptance_tests": [
+      "ai_assist_action_returns_diff_object",
+      "ai_assist_does_not_modify_document_without_user_confirm"
+    ]
+  },
+  "one_line_safety_test": {
+    "question": "If I click this right now, could I accidentally change canon?",
+    "rules": [
+      "if_yes -> control_belongs_to_world_editor",
+      "if_no -> may_belong_to_generate"
+    ]
+  },
+  "implementation_notes": {
+    "static_checks": [
+      "component_blacklist_in_mode: For each mode, assert that UI elements in 'remove' are not rendered",
+      "banner_checks: assert banners render according to mode",
+      "explorer_check: default_view hides internals",
+      "dirty_state_guard_check: navigation events are prevented when editor dirty"
+    ],
+    "e2e_scenarios": [
+      "generate_flow: open Generate, run model, promote output to world_db (validate only via explicit promote)",
+      "world_editor_flow: open Editor, make edit, save, save as new version, revert, load version",
+      "ai_assist_flow: select text, request assist, receive diff, apply confirm -> change persisted"
+    ]
+  }
+}

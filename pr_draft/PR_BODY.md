@@ -6,10 +6,11 @@ This PR restores and enhances the World Builder UI using the `stitch_world_edito
 
 Key changes
 -----------
-- src/ui.py — Rebuilt modular Gradio UI, injected APP_STYLE CSS/JS for toasts, gutter, jump-to-line modal, selection sync, and action bridge (retry/open-folder).
-- scripts/world_builder.py — persistence helpers, set_debounce exposed, safe action handlers remain and wired to UI.
+- src/ui.py — Rebuilt modular Gradio UI with **UI Contract Enforcement** (Tabs for Generate vs Editor). Injected APP_STYLE CSS/JS for toasts, gutter, jump-to-line modal, selection sync, and action bridge (retry/open-folder).
+- src/world_builder.py — Persistence helpers, set_debounce exposed, safe action handlers remain and wired to UI. Migrated from scripts/.
+- src/ollama_runner.py — Model execution logic migrated from scripts/.
 - Tests: several unit tests and smoke tests under `tests/` (toasts, actions, confirm handlers, visual presence tests).
-- E2E: Playwright scaffold under `e2e/playwright/` with smoke and flow tests (`editor.spec.ts`, `editor_flow.spec.ts`) and helper `scripts/start_test_app.py` to run app for tests.
+- E2E: Playwright scaffold under `e2e/playwright/` with smoke and flow tests (`editor.spec.ts`, `editor_flow.spec.ts`) and helper `src/start_test_app.py` to run app for tests.
 - OpenSpec: added change proposal and spec delta under `openspec/changes/stitch-world-editor-ui-001/` (proposal.md, tasks.md, design.md, specs/ui/spec.md) and validated the change.
 
 Screenshots / Mockups
@@ -21,7 +22,7 @@ How to run tests
 ----------------
 - Unit tests: `python -m pytest -q` (all tests passing locally)
 - E2E (local):
-  1. Start test app: `python scripts/start_test_app.py` (binds to http://127.0.0.1:7870)
+  1. Start test app: `python -m src.start_test_app` (binds to http://127.0.0.1:7870)
   2. In `e2e/playwright`: `npm ci` and `npx playwright install`
   3. Run: `npx playwright test`
 

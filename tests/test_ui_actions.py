@@ -2,11 +2,7 @@ import os
 import json
 import importlib.util
 
-# import scripts.world_builder by path
-spec = importlib.util.spec_from_file_location('world_builder', os.path.join(os.getcwd(), 'scripts', 'world_builder.py'))
-wb = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(wb)
-
+import src.world_builder as wb
 import src.ui as ui
 
 

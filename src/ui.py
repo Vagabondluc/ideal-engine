@@ -13,7 +13,7 @@ from typing import Tuple
 import gradio as gr
 from src.indexer import get_world_tree, get_world_files
 from src.runner import run_ollama_gen
-import scripts.world_builder as wb
+import src.world_builder as wb
 
 # Small client-side toast script and styles injected into the Gradio app.
 APP_STYLE = r'''
@@ -423,181 +423,245 @@ def create_app():
     with gr.Blocks(title="World Builder — Minimal UI") as app:
         # inject toast script, CSS and helpers
         gr.HTML(APP_STYLE)
-        with gr.Row():
-            with gr.Column(scale=1, min_width=260):
-                gr.Markdown("### 📚 World Database")
-                world_tree = gr.Code(value=get_world_tree(), language='markdown', interactive=False, lines=20)
-                file_select = gr.Dropdown(choices=get_world_files(), value=(get_world_files()[0] if get_world_files() else None), label='Select Entry')
-                refresh_btn = gr.Button('🔄 Refresh')
-            with gr.Column(scale=2):
-                gr.Markdown('### 📝 Editor')
+        
+        with gr.Tabs() as main_tabs:
+            # --- GENERATE MODE ---
+            with gr.Tab("Generate", id="tab_generate"):
+                gr.HTML("<div style='background:#eef2ff;border-left:4px solid #4f46e5;padding:10px;margin-bottom:10px;'><strong>Mode: Generate</strong> — Create candidate content. Nothing is saved to canon unless explicitly promoted.</div>")
                 with gr.Row():
-                    gutter_html = gr.HTML("<div id='wb-gutter' class='wb-gutter' style='height:320px;overflow:auto;'><div id='wb-gutter-lines'></div></div>")
-                    editor = gr.Code(language='markdown', lines=20, interactive=True, elem_id='wb-editor')
-                original_content = gr.State('')
-                is_dirty = gr.State(False)
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📜 Scripts")
+                        # Use the prompt tree from ollama_runner
+                        from .ollama_runner import walk_prompt_tree, list_prompts
+                        prompt_tree = walk_prompt_tree()
+                        script_selector = gr.Dropdown(choices=list_prompts(), label="Select Script")
+                        model_dd = gr.Dropdown(choices=['mistral:latest','llama3:8b','deepseek-r1:7b'], value='mistral:latest', label='Model')
+                        temp = gr.Slider(0.0, 1.5, value=0.7, step=0.05, label='Temperature')
+                        run_btn = gr.Button('▶ RUN MODEL', variant='primary')
+                        
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 🧠 Prompt & Output")
+                        prompt_editor = gr.Code(language='markdown', lines=10, interactive=True, label="Prompt Editor")
+                        model_output = gr.Code(language='markdown', lines=15, interactive=False, label="Model Output (Read-only)")
+                        with gr.Row():
+                            promote_btn = gr.Button("📥 Promote to World Database")
+                            clear_gen_btn = gr.Button("🗑 Clear")
+                
                 with gr.Row():
-                    save_btn = gr.Button('💾 Save')
-                    revert_btn = gr.Button('↩ Revert')
-                with gr.Row():
-                    save_version_btn = gr.Button('🕘 Save as New Version')
-                    save_version_meta_btn = gr.Button('📝 Save (with notes)')
-                    load_version_btn = gr.Button('📂 Load Version')
-                    restore_draft_btn = gr.Button('🔄 Restore Draft')
-                    versions_dd = gr.Dropdown(choices=[], value=None, label='Versions')
-                with gr.Row():
-                    gr.Markdown('**AI Assist**')
-                    assist_shorten = gr.Button('Shorten')
-                    assist_expand = gr.Button('Expand')
-                    assist_refactor = gr.Button('Refactor')
-                    assist_context = gr.Button('Contextual')
-                assist_output = gr.Code('', language='markdown', lines=8, interactive=False)
-                # Version modal elements
-                version_modal = gr.HTML('', visible=False)
-                version_notes = gr.Textbox('', label='Notes', placeholder='Short description for this version')
-                version_category = gr.Textbox('', label='Category (optional)', placeholder='e.g., NPCs, Locations')
-                version_confirm = gr.Button('Save Version', visible=False)
-                context_banner = gr.HTML('', visible=True)
-                toast_html = gr.HTML('', visible=True)  # toasts/notifications from actions (save/run)
-                # Confirmation modal components (hidden by default)
-                confirm_modal = gr.HTML('', visible=False)
-                confirm_yes = gr.Button('Confirm', visible=False)
-                confirm_no = gr.Button('Cancel', visible=False)
-                pending_action = gr.State('')  # JSON payload for pending confirmations
-                # Hidden action box that JS will write to when retry/open-folder buttons are clicked
-                wb_action_box = gr.Textbox('', visible=False, elem_id='wb-action-box')
-                # Left column action stubs (download/copy)
-                download_btn = gr.Button('⬇ Download', elem_classes=['btn'], size='sm')
-                copy_btn = gr.Button('📋 Copy', elem_classes=['btn'], size='sm')
-                # Auto-refresh control and debounce
-                auto_refresh = gr.Checkbox(label='Auto-refresh tree', value=True)
-                debounce_slider = gr.Slider(0.1, 5.0, value=wb.DEBOUNCE_SECONDS, step=0.1, label='Debounce (s)')
-                last_refreshed = gr.HTML('Last refreshed: Never')
+                    with gr.Column():
+                        gr.Markdown("### 📖 World Database Preview (Read-only)")
+                        world_preview = gr.Code(language='markdown', interactive=False, lines=10, label="Reference Content")
 
-        def _on_download_click(relpath):
-            if not relpath:
-                return show_toast('No entry selected','warn')
-            # Simple stub: indicate where the file would be downloaded from
-            return show_toast(f'Downloaded {relpath}','info')
-
-        def _on_copy_click(relpath):
-            if not relpath:
-                return show_toast('No entry selected','warn')
-            # Stub: copy to clipboard isn't trivial from server; show toast
-            return show_toast(f'Copied {relpath} to clipboard (simulated)','info')
-
-        with gr.Row():
-            with gr.Column(scale=2):
-                gr.Markdown('### 🧠 Prompt & Run')
-                prompt_editor = gr.Code(language='markdown', lines=8, interactive=True)
+            # --- WORLD EDITOR MODE ---
+            with gr.Tab("World Editor", id="tab_editor"):
+                gr.HTML("<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px;margin-bottom:10px;'><strong>Mode: World Editor</strong> — Maintain canonical truth. Explicit actions and versioned.</div>")
                 with gr.Row():
-                    model_dd = gr.Dropdown(choices=['mistral:latest','llama3:8b','deepseek-r1:7b'], value='mistral:latest', label='Model')
-                    temp = gr.Slider(0.0, 1.5, value=0.7, step=0.05, label='Temperature')
-                    run_btn = gr.Button('▶ RUN MODEL')
-                model_output = gr.Code(language='markdown', lines=12, interactive=False)
-            with gr.Column(scale=1):
-                gr.Markdown('### Activity')
-                activity_html = gr.HTML(wb.get_activity_log_html(), label='Activity Log')
+                    with gr.Column(scale=1, min_width=260):
+                        gr.Markdown("### 📚 World Database")
+                        world_tree = gr.Code(value=get_world_tree(), language='markdown', interactive=False, lines=20)
+                        file_select = gr.Dropdown(choices=get_world_files(), value=(get_world_files()[0] if get_world_files() else None), label='Select Entry')
+                        refresh_btn = gr.Button('🔄 Refresh')
+                        # Left column action stubs (download/copy)
+                        with gr.Row():
+                            download_btn = gr.Button('⬇ Download', size='sm')
+                            copy_btn = gr.Button('📋 Copy', size='sm')
+                        
+                        # Auto-refresh control and debounce
+                        auto_refresh = gr.Checkbox(label='Auto-refresh tree', value=True)
+                        debounce_slider = gr.Slider(0.1, 5.0, value=wb.DEBOUNCE_SECONDS, step=0.1, label='Debounce (s)')
+                        last_refreshed = gr.HTML('Last refreshed: Never')
 
-        # Wiring
+                    with gr.Column(scale=2):
+                        context_banner = gr.HTML("<div style='background:#f0f0f0;border-left:4px solid #666;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> World Editor<br><strong>Path:</strong> (none)<br><strong>State:</strong> <span style='color:green;'>✅ Clean</span></div>", visible=True)
+                        with gr.Row():
+                            gutter_html = gr.HTML("<div id='wb-gutter' class='wb-gutter' style='height:320px;overflow:auto;'><div id='wb-gutter-lines'></div></div>")
+                            editor = gr.Code(language='markdown', lines=20, interactive=True, elem_id='wb-editor')
+                        
+                        original_content = gr.State('')
+                        is_dirty = gr.State(False)
+                        
+                        with gr.Row():
+                            save_btn = gr.Button('💾 Save', variant='primary')
+                            revert_btn = gr.Button('↩ Revert')
+                            restore_as_canon_btn = gr.Button('📥 Restore as New Canon Version', variant='primary', visible=False)
+                        
+                        with gr.Accordion("Versioning & Drafts", open=False) as versioning_accordion:
+                            with gr.Row():
+                                versions_dd = gr.Dropdown(choices=[], value=None, label='Versions')
+                                load_version_btn = gr.Button('📂 Load Version')
+                            with gr.Row():
+                                version_notes = gr.Textbox('', label='Notes', placeholder='Short description for this version')
+                                save_version_btn = gr.Button('🕘 Save as New Version')
+                            with gr.Row():
+                                restore_draft_btn = gr.Button('🔄 Restore Draft')
+
+                        with gr.Accordion("AI Assist (Scoped)", open=False) as ai_assist_accordion:
+                            with gr.Row():
+                                assist_shorten = gr.Button('Shorten')
+                                assist_expand = gr.Button('Expand')
+                                assist_refactor = gr.Button('Refactor')
+                                assist_context = gr.Button('Contextual')
+                            assist_output = gr.Code('', language='markdown', lines=8, interactive=False)
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown('### Activity')
+                        activity_html = gr.HTML(wb.get_activity_log_html(), label='Activity Log')
+
+        # --- GLOBAL COMPONENTS (Hidden) ---
+        toast_html = gr.HTML('', visible=True)
+        wb_action_box = gr.Textbox('', visible=False, elem_id='wb-action-box')
+        pending_action = gr.State('')
+        
+        # --- WIRING ---
+
+        # Generate Mode Wiring
+        def _on_script_select(name):
+            from .ollama_runner import read_prompt, NARRATIVE_DIR
+            try:
+                path = os.path.join(NARRATIVE_DIR, name)
+                return read_prompt(path)
+            except Exception as e:
+                return f"Error loading script: {e}"
+
+        script_selector.change(_on_script_select, inputs=[script_selector], outputs=[prompt_editor])
+        run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html])
+        
+        def _on_promote(output):
+            if not output:
+                return show_toast("Nothing to promote", "warn")
+            # In a real app, this might open a dialog to choose a filename
+            return show_toast("Promotion dialog not yet implemented. Copy-paste to Editor for now.", "info")
+        
+        promote_btn.click(_on_promote, inputs=[model_output], outputs=[toast_html])
+        clear_gen_btn.click(lambda: ("", ""), outputs=[prompt_editor, model_output])
+
+        # Editor Mode Wiring
         def _on_refresh():
             tree, files_upd = refresh_tree_ui()
             ts = f"Last refreshed: {time.strftime('%Y-%m-%d %H:%M:%S')}"
             return tree, files_upd, ts
 
+        refresh_btn.click(_on_refresh, inputs=[], outputs=[world_tree, file_select, last_refreshed])
+        
         def _on_select(relpath):
+            if not relpath:
+                return "", "", "", False, gr.update(visible=True), gr.update(choices=[], value=None), gr.update(interactive=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False)
+            
             content, activity = load_file(relpath)
-            banner = f"Selected: {relpath}" if relpath else ""
-            versions = wb.list_versions(relpath) if relpath else []
-            versions_update = {'choices': versions, 'value': (versions[0] if versions else None)}
-            # return editor content, activity html, set original content state, clear dirty flag, update banner, update versions dropdown
-            return content, activity, content, False, banner, versions_update
+            is_version = relpath.startswith('.versions/')
+            
+            if is_version:
+                banner = f"<div style='background:#fffbeb;border-left:4px solid #d97706;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Historical Version<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:#d97706;'>🔒 Read-only snapshot</span></div>"
+                return (
+                    content, activity, content, False, banner, 
+                    gr.update(choices=[], value=None), 
+                    gr.update(interactive=False), 
+                    gr.update(visible=False), 
+                    gr.update(visible=False), 
+                    gr.update(visible=False), 
+                    gr.update(visible=False), 
+                    gr.update(visible=True)
+                )
+            else:
+                banner = f"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Canonical File<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:green;'>✅ Clean</span></div>"
+                versions = wb.list_versions(relpath) if relpath else []
+                versions_update = gr.update(choices=versions, value=(versions[0] if versions else None))
+                return (
+                    content, activity, content, False, banner, 
+                    versions_update, 
+                    gr.update(interactive=True), 
+                    gr.update(visible=True), 
+                    gr.update(visible=True), 
+                    gr.update(visible=True), 
+                    gr.update(visible=True), 
+                    gr.update(visible=False)
+                )
+
+        file_select.change(_on_select, inputs=[file_select], outputs=[editor, activity_html, original_content, is_dirty, context_banner, versions_dd, editor, save_btn, revert_btn, save_version_btn, ai_assist_accordion, restore_as_canon_btn])
+        
+        def _on_editor_change(new_content, original, relpath):
+            if not relpath or relpath.startswith('.versions/'):
+                return gr.update(visible=True), False, gr.update(visible=False), gr.update(visible=False)
+            
+            dirty = (new_content != original)
+            state_color = "#ff8c00" if dirty else "green"
+            state_text = "⚠️ Modified (unsaved)" if dirty else "✅ Clean"
+            banner = f"<div style='background:#f0f0f0;border-left:4px solid #666;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> World Editor<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:{state_color};'>{state_text}</span></div>"
+            return banner, dirty, gr.update(visible=True), gr.update(visible=dirty)
+
+        editor.change(_on_editor_change, inputs=[editor, original_content, file_select], outputs=[context_banner, is_dirty, save_btn, revert_btn])
 
         def _on_save(relpath, content):
             toast, out_content, tree_text, activity = save_file(relpath, content)
-            # If save returned a non-script message, normalize to toast HTML
             toast_html_out = toast if (isinstance(toast, str) and toast.strip().startswith('<script>')) else show_toast(str(toast or 'Saved'), 'info')
-            banner = f"Saved: {relpath}" if relpath else ""
+            banner = f"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Canonical File<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:green;'>✅ Clean (saved)</span></div>"
             versions = wb.list_versions(relpath) if relpath else []
-            versions_update = {'choices': versions, 'value': (versions[0] if versions else None)}
-            # return toast HTML, editor content, tree text, activity, update original, clear dirty, update banner, update versions
-            return toast_html_out, out_content, tree_text, activity, out_content, False, banner, versions_update
-        def _on_editor_change(new_content, original):
-            dirty = (new_content != original)
-            banner = "Unsaved changes" if dirty else ""
-            return banner, dirty
+            versions_update = gr.update(choices=versions, value=(versions[0] if versions else None))
+            return toast_html_out, out_content, tree_text, activity, out_content, False, banner, versions_update, gr.update(visible=False)
 
-        def _on_revert(original):
-            banner = "Reverted" if original else ""
-            return original, banner, False
+        save_btn.click(_on_save, inputs=[file_select, editor], outputs=[toast_html, editor, world_tree, activity_html, original_content, is_dirty, context_banner, versions_dd, revert_btn])
+        
+        def _on_revert(original, relpath):
+            banner = f"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Canonical File<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:green;'>✅ Clean (reverted)</span></div>"
+            return original, banner, False, gr.update(visible=False)
+
+        def _on_load_version(relpath, version_id):
+            if not version_id:
+                return '', f"<div style='background:#f0f0f0;border-left:4px solid #666;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> World Editor<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:red;'>❌ No version selected</span></div>", False, '', gr.update(visible=False)
+            content = wb.load_version(relpath, version_id)
+            banner = f"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Canonical File<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:green;'>✅ Loaded version: {version_id}</span></div>"
+            return content or '', banner, False, content or '', gr.update(visible=False)
+
+        def _on_restore_draft(relpath):
+            draft = wb.restore_draft(relpath)
+            if not draft:
+                return '', f"<div style='background:#f0f0f0;border-left:4px solid #666;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> World Editor<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:red;'>❌ No draft found</span></div>", False, gr.update(visible=False)
+            banner = f"<div style='background:#f0f0f0;border-left:4px solid #666;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> World Editor<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:#ff8c00;'>⚠️ Draft restored (unsaved)</span></div>"
+            return draft, banner, True, gr.update(visible=True)
 
         def _on_ai_assist(action, content, model, temperature):
             visible_update, suggestion, status = wb.ai_assist_action(action, content, model, temperature)
             toast = show_toast(status, 'info' if status.startswith('✅') else 'error')
             return suggestion, toast
-        def _on_request_save_version(relpath, content):
-            # Open version modal allowing notes and optional category
-            if not relpath:
-                return show_toast('No entry selected','error'), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
-            msg = f"<div style='padding:12px'><strong>Save new version</strong><div style='margin-top:8px'>Enter optional notes and save a new immutable version for <code>{wb.html_escape(relpath)}</code>.</div></div>"
-            # show modal and the confirm button
-            return msg, gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
-
-        def _on_confirm_yes(pending_payload_json):
-            return handle_confirm_save(pending_payload_json)
-
-        def _on_confirm_no(_pending):
-            return handle_confirm_cancel(_pending)
 
         def _on_action(action_json):
             return handle_action_json(action_json)
 
-        def _on_load_version(relpath, version_id):
-            if not version_id:
-                return '', 'No version selected', False, ''
-            content = wb.load_version(relpath, version_id)
-            banner = f"Loaded version: {version_id}" if content else f"Failed to load version: {version_id}"
-            return content or '', banner, False, content or ''
+        def _on_restore_as_canon(relpath, content):
+            if not relpath or not relpath.startswith('.versions/'):
+                return show_toast("Not a version file", "error"), gr.update(), gr.update()
+            
+            # Extract original filename from version path
+            # .versions/path/to/file.md/v_timestamp.md -> path/to/file.md
+            parts = relpath.split('/')
+            if len(parts) < 3:
+                return show_toast("Invalid version path", "error"), gr.update(), gr.update()
+            
+            canon_relpath = '/'.join(parts[1:-1])
+            toast, out_content, tree_text, activity = save_file(canon_relpath, content)
+            
+            # Switch to the newly restored canon file
+            return toast, canon_relpath, out_content
 
-        def _on_restore_draft(relpath):
-            draft = wb.restore_draft(relpath)
-            if not draft:
-                return '', 'No draft found', False
-            banner = 'Draft restored'
-            # keep original content unchanged, set dirty True so user can save
-            return draft, banner, True
-
-        refresh_btn.click(_on_refresh, inputs=[], outputs=[world_tree, file_select, last_refreshed])
-        download_btn.click(_on_download_click, inputs=[file_select], outputs=[toast_html])
-        copy_btn.click(_on_copy_click, inputs=[file_select], outputs=[toast_html])
-        debounce_slider.change(handle_debounce_change, inputs=[debounce_slider], outputs=[toast_html])
-        auto_refresh.change(handle_auto_refresh_toggle, inputs=[auto_refresh], outputs=[toast_html])
-        file_select.change(_on_select, inputs=[file_select], outputs=[editor, activity_html, original_content, is_dirty, context_banner, versions_dd])
-        editor.change(_on_editor_change, inputs=[editor, original_content], outputs=[context_banner, is_dirty])
-        save_btn.click(_on_save, inputs=[file_select, editor], outputs=[toast_html, editor, world_tree, activity_html, original_content, is_dirty, context_banner, versions_dd])
-        revert_btn.click(_on_revert, inputs=[original_content], outputs=[editor, context_banner, is_dirty])
-        # Request save -> show confirmation modal
-        save_version_btn.click(_on_request_save_version, inputs=[file_select, editor], outputs=[version_modal, version_confirm, version_notes, version_category, pending_action])
-        # Confirm modal previously used; keep it for simple confirmation as well
-        save_version_meta_btn.click(_on_request_save_version, inputs=[file_select, editor], outputs=[version_modal, version_confirm, version_notes, version_category, pending_action])
-        version_confirm.click(lambda rel, content, notes, category: wb.save_new_version(rel, content, notes=notes), inputs=[file_select, editor, version_notes, version_category], outputs=[toast_html, versions_dd])
-        # Confirmation buttons execute or cancel pending action
-        confirm_yes.click(_on_confirm_yes, inputs=[pending_action], outputs=[toast_html, versions_dd, confirm_modal, confirm_yes, confirm_no, pending_action])
-        confirm_no.click(_on_confirm_no, inputs=[pending_action], outputs=[toast_html, versions_dd, confirm_modal, confirm_yes, confirm_no, pending_action])
-        load_version_btn.click(_on_load_version, inputs=[file_select, versions_dd], outputs=[editor, context_banner, is_dirty, original_content])
-        restore_draft_btn.click(_on_restore_draft, inputs=[file_select], outputs=[editor, context_banner, is_dirty])
+        revert_btn.click(_on_revert, inputs=[original_content, file_select], outputs=[editor, context_banner, is_dirty, revert_btn])
+        restore_as_canon_btn.click(_on_restore_as_canon, inputs=[file_select, editor], outputs=[toast_html, file_select, editor])
+        
+        save_version_btn.click(lambda rel, content, notes: wb.save_new_version(rel, content, notes=notes), inputs=[file_select, editor, version_notes], outputs=[toast_html, versions_dd])
+        load_version_btn.click(_on_load_version, inputs=[file_select, versions_dd], outputs=[editor, context_banner, is_dirty, original_content, revert_btn])
+        restore_draft_btn.click(_on_restore_draft, inputs=[file_select], outputs=[editor, context_banner, is_dirty, revert_btn])
+        
         assist_shorten.click(lambda *_: _on_ai_assist('Shorten', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
         assist_expand.click(lambda *_: _on_ai_assist('Expand', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
         assist_refactor.click(lambda *_: _on_ai_assist('Refactor', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
         assist_context.click(lambda *_: _on_ai_assist('Contextual', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
-        run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html])
 
-        # reference UI elements to avoid linter 'assigned but not used' warnings
-        _ = (revert_btn, context_banner, versions_dd, save_version_btn, load_version_btn, restore_draft_btn, wb_action_box, gutter_html)
-        # reference UI elements to avoid linter 'assigned but not used' warnings
-        _ = (revert_btn, context_banner)
+        wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html])
+        debounce_slider.change(handle_debounce_change, inputs=[debounce_slider], outputs=[toast_html])
+        auto_refresh.change(handle_auto_refresh_toggle, inputs=[auto_refresh], outputs=[toast_html])
 
     return app
+
 
 
 if __name__ == '__main__':

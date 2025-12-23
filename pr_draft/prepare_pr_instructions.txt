@@ -11,8 +11,8 @@ If you prefer to review changes locally and create the PR yourself, follow these
    git checkout -b stitch-world-editor-ui-001
 
 3) Stage and commit the changes for this PR (adjust file list as needed):
-   git add src/ui.py scripts/world_builder.py openspec/ tests/ e2e/playwright/ scripts/start_test_app.py .github/workflows/e2e-playwright.yml pr_draft/
-   git commit -m "feat: restore world builder UI, add toasts, gutter, versioning, tests, and Playwright E2E scaffold"
+   git add src/ openspec/ tests/ e2e/playwright/ .github/workflows/e2e-playwright.yml pr_draft/
+   git commit -m "feat: restore world builder UI with UI Contract, autonomous src/, toasts, gutter, versioning, tests, and Playwright E2E scaffold"
 
 4) Push to remote and open PR (choose your remote and upstream branch):
    git remote add origin <your-remote-url>

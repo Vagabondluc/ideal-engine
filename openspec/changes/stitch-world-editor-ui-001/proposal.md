@@ -8,18 +8,21 @@ Status: Draft
 
 Summary
 -------
-Implement a functional-first restoration and enhancement of the World Editor UI using the provided mockup assets in `stitch_world_editor_wireframe/` as the visual reference. This change focuses on restoring behavior from the legacy `scripts/world_builder.py` while aligning the layout and interactive affordances with the wireframe (tree/editor/controls, toasts, confirmations, AI-assist, versions, line gutter interactivity).
+Implement a functional-first restoration and enhancement of the World Editor UI using the provided mockup assets in `stitch_world_editor_wireframe/` as the visual reference. This change focuses on restoring behavior from the legacy `scripts/world_builder.py` while aligning the layout and interactive affordances with the wireframe (tree/editor/controls, toasts, confirmations, AI-assist, versions, line gutter interactivity). It also enforces a strict **UI Contract** for mode separation and migrates all logic to an autonomous `src/` package.
 
 Goals
 -----
 - Restore the core editor flows (select → edit → save → save-version → load-version → revert → drafts) so the app is functional and testable.
+- Enforce **UI Contract**: Hard separation between `Generate` (low safety) and `World Editor` (high safety) modes.
+- Migrate all domain logic to `src/` to make it an autonomous package, removing legacy `scripts/` dependencies.
 - Use the `stitch_world_editor_wireframe` HTML assets as the authoritative visual mockup for layout, component placement, and behavior expectations.
-- Prioritize a minimal, robust implementation ("functional-first") that is easy to test and iterate on; provide a separate, scoped follow-up for pixel-perfect styling.
 
 Scope
 -----
 Included:
 - Rebuild UI in `src/ui.py` with layout parity (left: tree, center: editor with gutter, right: controls) and the interactive features in the wireframe.
+- Implement **UI Contract** using `gr.Tabs` to separate modes.
+- Migrate all logic from `scripts/` to `src/` (`world_builder.py`, `ollama_runner.py`, `start_test_app.py`).
 - Inject lightweight CSS/JS to approximate the mockup appearance and provide robust client-side interactions (gutter syncing, clickable lines, toasts, confirmation modal, action bridge for retry/open-folder).
 - Add unit tests and integration smoke tests (create_app + core handlers) and plan for E2E tests.
 
@@ -44,7 +47,7 @@ References
 ----------
 - Mockup assets: `stitch_world_editor_wireframe/` (HTML + screenshots)
 - Existing mapping: `openspec/changes/ui-wireframe-mapping.md`
-- Current implementation in progress: `src/ui.py`, `scripts/world_builder.py`
+- Current implementation: `src/ui.py`, `src/world_builder.py`, `src/ollama_runner.py`
 
 Questions / Clarifications
 -------------------------

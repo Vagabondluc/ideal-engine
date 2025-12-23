@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-import scripts.ollama_runner as runner
+import src.ollama_runner as runner
 
 
 class TestOllamaRunner(unittest.TestCase):

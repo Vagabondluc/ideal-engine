@@ -28,10 +28,10 @@ BRANCH=stitch-world-editor-ui-001
 git checkout -b $BRANCH || git checkout $BRANCH
 
 # Stage files
-git add src/ui.py scripts/world_builder.py openspec/ tests/ e2e/playwright/ scripts/start_test_app.py .github/workflows/e2e-playwright.yml pr_draft/ || true
+git add src/ openspec/ tests/ e2e/playwright/ .github/workflows/e2e-playwright.yml pr_draft/ || true
 
 # Commit
-git commit -m "feat: restore world builder UI, add toasts, gutter, versioning, tests, and Playwright E2E scaffold" || echo "No changes to commit."
+git commit -m "feat: restore world builder UI with UI Contract, autonomous src/, toasts, gutter, versioning, tests, and Playwright E2E scaffold" || echo "No changes to commit."
 
 read -p "Push branch to remote 'origin' and open PR using 'gh'? [y/N] " -n 1 -r
 echo
