@@ -1,0 +1,27 @@
+Local preparation script (manual steps)
+----------------------------------------
+If you prefer to review changes locally and create the PR yourself, follow these steps:
+
+1) Initialize a git repository (only if one doesn't exist):
+   git init
+   git add .
+   git commit -m "chore: initial import (pre-existing workspace)"
+
+2) Create and switch to feature branch:
+   git checkout -b stitch-world-editor-ui-001
+
+3) Stage and commit the changes for this PR (adjust file list as needed):
+   git add src/ openspec/ tests/ e2e/playwright/ .github/workflows/e2e-playwright.yml pr_draft/
+   git commit -m "feat: restore world builder UI with UI Contract, autonomous src/, toasts, gutter, versioning, tests, and Playwright E2E scaffold"
+
+4) Push to remote and open PR (choose your remote and upstream branch):
+   git remote add origin <your-remote-url>
+   git push -u origin stitch-world-editor-ui-001
+
+5) Open PR (using GitHub CLI if available):
+   gh pr create --title "Restore & Enhance World Builder UI" --body-file pr_draft/PR_BODY.md --base main --head stitch-world-editor-ui-001
+
+Notes:
+- If your repo already exists and has history, do not run the "git init" step; instead, create the branch from your existing repo and cherry-pick or copy these changes into it.
+- The `gh` CLI makes PR creation easy; otherwise create the PR via the GitHub web UI.
+- I can optionally run these steps for you if you grant permission to initialize a repo and push from here.
