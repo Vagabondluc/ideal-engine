@@ -58,6 +58,41 @@ setTimeout(function(){
     });
   }catch(e){console.warn('wrap-fallback error', e);} 
 }, 250);
+
+(function enableWrapWithFallback(){
+  var tries = 0; var maxTries = 12;
+  function check(){
+    tries++;
+    try{
+      var el = document.querySelector('.cm-scroller, .cm-content, .cm-line');
+      var ok = false;
+      if(el){
+        var ws = window.getComputedStyle(el).whiteSpace || el.style.whiteSpace || '';
+        if(ws && ws.indexOf('pre-wrap') !== -1) ok = true;
+      } else {
+        var pre = document.querySelector('.gr-code pre, .gr-code code');
+        if(pre){ var ws = window.getComputedStyle(pre).whiteSpace || pre.style.whiteSpace || ''; if(ws && ws.indexOf('pre-wrap') !== -1) ok = true; }
+      }
+      if(ok) return;
+      if(tries >= maxTries){
+        // fallback: extract editor content and ask server to switch to wrapped textbox
+        try{
+          var editorEl = findEditor();
+          var text = editorEl ? getText(editorEl) : '';
+          window.wbActionCallback(JSON.stringify({action:'switch_to_textbox_auto', content: text}));
+          showWBToast('Wrapping not available; switching to wrapped textbox', 'warn', {ttl:4000});
+        }catch(e){ console.warn('wrap autofallback err', e); }
+        return;
+      }
+      // re-apply styles & try CM APIs
+      document.querySelectorAll('.CodeMirror').forEach(function(cmEl){ try{ if(cmEl.CodeMirror && cmEl.CodeMirror.setOption) cmEl.CodeMirror.setOption('lineWrapping', true); }catch(e){} try{ if(cmEl.editor && cmEl.editor.setOption) cmEl.editor.setOption('lineWrapping', true); }catch(e){} });
+      document.querySelectorAll('.cm-scroller, .cm-content, .cm-line').forEach(function(el){ try{ el.style.whiteSpace = 'pre-wrap'; el.style.overflowWrap = 'anywhere'; el.style.wordBreak = 'break-word'; }catch(e){} });
+      setTimeout(check, 300);
+    }catch(e){ console.warn('wrap check err', e); if(tries < maxTries) setTimeout(check, 300); }
+  }
+  setTimeout(check, 300);
+})();
+
 </script>
 
 .wb-controls .btn{background:#f3f4f6;padding:6px;border-radius:6px}
@@ -399,6 +434,14 @@ def handle_action_json(action_json: str):
         path = payload.get('path')
         ok, msg = wb.open_folder(path)
         return show_toast(msg, 'info' if ok else 'error')
+    elif act in ('switch_to_textbox_auto', 'switch_to_textbox'):
+        content = payload.get('content', '')
+        # Hide code editor, show wrapped textbox with content
+        return show_toast('Switched to wrapped textbox', 'info'), gr.update(visible=False), gr.update(value=content, visible=True)
+    elif act == 'switch_to_code':
+        content = payload.get('content', '')
+        # Show code editor, hide wrapped textbox
+        return show_toast('Switched to Code editor', 'info'), gr.update(value=content, visible=True), gr.update(visible=False)
     else:
         return show_toast('Unknown action','warn')
 
@@ -533,7 +576,9 @@ def create_app():
                         
                     with gr.Column(scale=2):
                         gr.Markdown("### 🧠 Prompt & Output")
-                        prompt_editor = gr.Code(language='markdown', lines=10, interactive=True, label="Prompt Editor")
+                        prompt_editor = gr.Code(language='markdown', lines=10, interactive=True, label="Prompt Editor", elem_id='wb-editor')
+                        # Fallback wrapped textbox (hidden by default). Will be shown if wrapping cannot be enabled in CodeMirror.
+                        prompt_editor_text = gr.Textbox('', lines=10, interactive=True, label="Prompt Editor (Wrapped)", visible=False, elem_id='wb-editor-textbox')
                         model_output = gr.Code(language='markdown', lines=15, interactive=False, label="Model Output (Read-only)")
                         # Execution telemetry / status is separate from the model output.
                         # `model_output` must only contain model text. `status_html` owns errors, timing, retries.
@@ -541,6 +586,8 @@ def create_app():
                         with gr.Row():
                             promote_btn = gr.Button("📥 Promote to World Database")
                             clear_gen_btn = gr.Button("🗑 Clear")
+                            switch_to_textbox_btn = gr.Button('Use Wrapped Textbox', size='sm')
+                            switch_to_code_btn = gr.Button('Use Code Editor', size='sm', visible=False)
                 
                 with gr.Row():
                     with gr.Column():
@@ -787,7 +834,16 @@ def create_app():
           # best-effort wiring; if components not in scope, ignore
           pass
 
-        wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html])
+        wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html, prompt_editor, prompt_editor_text])
+        
+        def _switch_to_textbox(code_content):
+            return gr.update(visible=False), gr.update(value=code_content, visible=True), show_toast('Switched to wrapped textbox', 'info')
+
+        def _switch_to_code(text_value):
+            return gr.update(value=text_value, visible=True), gr.update(visible=False), show_toast('Switched to Code editor', 'info')
+
+        switch_to_textbox_btn.click(_switch_to_textbox, inputs=[prompt_editor], outputs=[prompt_editor, prompt_editor_text, toast_html])
+        switch_to_code_btn.click(_switch_to_code, inputs=[prompt_editor_text], outputs=[prompt_editor, prompt_editor_text, toast_html])
         debounce_slider.change(handle_debounce_change, inputs=[debounce_slider], outputs=[toast_html])
         auto_refresh.change(handle_auto_refresh_toggle, inputs=[auto_refresh], outputs=[toast_html])
 
