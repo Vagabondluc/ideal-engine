@@ -343,21 +343,28 @@ def save_file(relpath: str, content: str):
     except Exception as e:
         return wb.format_error_enhanced('Save failed', detail=str(e)), content, wb.get_world_tree(), wb.get_activity_log_html()
 
-def run_model(prompt: str, model: str, temperature: float):
-    # Use a short timeout for UI-initiated runs to fail fast during smoke tests.
-    ok, payload = run_ollama_gen(prompt, model, temperature, timeout=10)
+def run_model(prompt: str, model: str, temperature: float, is_running_state: bool):
+  """Generator-based run handler.
+
+  Yields interim running-state so UI can show a spinner/disabled button, then yields final outputs.
+  Outputs shape: (model_output_text, toast_html, status_html, is_running_bool)
+  """
+  # Initial running yield: set is_running True and show running status
+  yield '', show_toast('⏳ Running...', 'info'), "<div style='padding:8px;border-left:4px solid #2563eb;background:#eff6ff;'>⏳ Running…</div>", True
+  try:
+    ok, payload = run_ollama_gen(prompt, model, temperature, timeout=120)
     if ok:
-        out = payload.get('stdout', '')
-        # Success: model_output gets only the text; status_html shows completion summary.
-        status = "<div style='padding:8px;border-left:4px solid #22c55e;background:#f0fdf4;'>✅ Completed</div>"
-        return out, show_toast('✅ Model ran successfully', 'info'), status
+      out = payload.get('stdout', '')
+      status = "<div style='padding:8px;border-left:4px solid #22c55e;background:#f0fdf4;'>✅ Completed</div>"
+      yield out, show_toast('✅ Model ran successfully', 'info'), status, False
     else:
-        # Build friendly error
-        detail = payload.get('detail') or payload.get('error')
-        rid = payload.get('retry_id')
-        # On error: model_output remains empty; status_html owns the error UI (retry, details).
-        status = wb.format_error_enhanced('Model error', detail=str(detail), retry_id=rid, show_advanced=False)
-        return '', show_toast('❌ Model failed', 'error'), status
+      detail = payload.get('detail') or payload.get('error')
+      rid = payload.get('retry_id')
+      status = wb.format_error_enhanced('Model error', detail=str(detail), retry_id=rid, show_advanced=False)
+      yield '', show_toast('❌ Model failed', 'error'), status, False
+  except Exception as e:
+    status = wb.format_error_enhanced('Model error', detail=str(e), show_advanced=False)
+    yield '', show_toast('❌ Model failed', 'error'), status, False
 
 
 def handle_action_json(action_json: str):
@@ -584,6 +591,8 @@ def create_app():
         toast_html = gr.HTML('', visible=True)
         wb_action_box = gr.Textbox('', visible=False, elem_id='wb-action-box')
         pending_action = gr.State('')
+        # Execution running flag: single source of truth for model execution state
+        is_running = gr.State(False)
         
         # --- WIRING ---
 
@@ -621,7 +630,8 @@ def create_app():
             return gr.update(choices=[], value=None), show_toast(f'Error syncing models: {e}', 'error')
 
         sync_models_btn.click(_sync_models, inputs=[], outputs=[model_dd, toast_html])
-        run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html, status_html])
+        # run_model is a generator that yields running-state then final outputs.
+        run_btn.click(run_model, inputs=[prompt_editor, model_dd, temp, is_running], outputs=[model_output, toast_html, status_html, is_running])
         
         def _on_promote(output):
             if not output:
