@@ -110,8 +110,6 @@ setTimeout(function(){
 
 </script>
 
-.wb-controls .btn{background:#f3f4f6;padding:6px;border-radius:6px}
-</style>
 <!-- Jump-to-line modal markup -->
 <div id="wb-jump-modal" style="display:none;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:#fff;padding:12px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.12);z-index:99999">
   <div style="font-weight:600;margin-bottom:6px">Jump to line</div>
