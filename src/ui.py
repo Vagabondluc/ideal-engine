@@ -73,13 +73,28 @@ setTimeout(function(){
         var pre = document.querySelector('.gr-code pre, .gr-code code');
         if(pre){ var ws = window.getComputedStyle(pre).whiteSpace || pre.style.whiteSpace || ''; if(ws && ws.indexOf('pre-wrap') !== -1) ok = true; }
       }
-      if(ok) return;
+      // If computed style indicates wrapping OR scroll dims suggest wrap, mark ok
+      try{
+        if(el){
+          var ws = window.getComputedStyle(el).whiteSpace || el.style.whiteSpace || '';
+          var wrappedByStyle = (ws && ws.indexOf('pre-wrap') !== -1);
+          var wrappedByScroll = (el.scrollWidth <= el.clientWidth + 2);
+          if(wrappedByStyle || wrappedByScroll){
+            window.wbActionCallback(JSON.stringify({action:'wrap_status', status:'ok'}));
+            return;
+          }
+        } else {
+          var pre = document.querySelector('.gr-code pre, .gr-code code');
+          if(pre){ var ws = window.getComputedStyle(pre).whiteSpace || pre.style.whiteSpace || ''; if(ws && ws.indexOf('pre-wrap') !== -1){ window.wbActionCallback(JSON.stringify({action:'wrap_status', status:'ok'})); return; } }
+        }
+      }catch(e){/*ignore*/}
       if(tries >= maxTries){
         // fallback: extract editor content and ask server to switch to wrapped textbox
         try{
           var editorEl = findEditor();
           var text = editorEl ? getText(editorEl) : '';
           window.wbActionCallback(JSON.stringify({action:'switch_to_textbox_auto', content: text}));
+          window.wbActionCallback(JSON.stringify({action:'wrap_status', status:'autofallback'}));
           showWBToast('Wrapping not available; switching to wrapped textbox', 'warn', {ttl:4000});
         }catch(e){ console.warn('wrap autofallback err', e); }
         return;
@@ -437,11 +452,14 @@ def handle_action_json(action_json: str):
     elif act in ('switch_to_textbox_auto', 'switch_to_textbox'):
         content = payload.get('content', '')
         # Hide code editor, show wrapped textbox with content
-        return show_toast('Switched to wrapped textbox', 'info'), gr.update(visible=False), gr.update(value=content, visible=True)
+        return show_toast('Switched to wrapped textbox', 'info'), gr.update(visible=False), gr.update(value=content, visible=True), gr.update(value='wrapped', visible=True)
     elif act == 'switch_to_code':
         content = payload.get('content', '')
         # Show code editor, hide wrapped textbox
-        return show_toast('Switched to Code editor', 'info'), gr.update(value=content, visible=True), gr.update(visible=False)
+        return show_toast('Switched to Code editor', 'info'), gr.update(value=content, visible=True), gr.update(visible=False), gr.update(value='editor', visible=True)
+    elif act == 'wrap_status':
+        st = payload.get('status','unknown')
+        return show_toast(f'Wrap status: {st}', 'info' if st=='ok' else 'warn'), gr.update(), gr.update(), gr.update(value=st)
     else:
         return show_toast('Unknown action','warn')
 
@@ -583,6 +601,8 @@ def create_app():
                         # Execution telemetry / status is separate from the model output.
                         # `model_output` must only contain model text. `status_html` owns errors, timing, retries.
                         status_html = gr.HTML('', label='Execution Status')
+                        # Wrap detection / status for debugging and auto-fallback
+                        wrap_status_html = gr.HTML('', label='Wrap Status')
                         with gr.Row():
                             promote_btn = gr.Button("📥 Promote to World Database")
                             clear_gen_btn = gr.Button("🗑 Clear")
