@@ -35,8 +35,8 @@ APP_STYLE = r'''
 .wb-gutter-line:hover{background:#111827;color:#fff}
 .wb-gutter-line.active{background:#6366f1;color:#fff;font-weight:700;box-shadow:inset 3px 0 0 rgba(99,102,241,0.15)}
 /* Editor font and scroll behavior */
-#wb-editor, #wb-editor textarea, #wb-editor pre { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px }
-.gr-code, .gr-code * { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace }
+#wb-editor, #wb-editor textarea, #wb-editor pre { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; white-space: pre-wrap; overflow-wrap: break-word; }
+.gr-code, .gr-code * { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap !important; word-break: break-word !important; overflow-wrap: break-word !important; }
 .wb-controls .btn{background:#f3f4f6;padding:6px;border-radius:6px}
 </style>
 <!-- Jump-to-line modal markup -->
