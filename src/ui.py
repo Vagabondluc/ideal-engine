@@ -38,7 +38,28 @@ APP_STYLE = r'''
 #wb-editor, #wb-editor textarea, #wb-editor pre { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .gr-code, .gr-code pre, .gr-code code, .gr-code * { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
 /* CodeMirror specific wrap overrides */
-.cm-scroller, .cm-content, .cm-line { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }
+.cm-scroller, .cm-content, .cm-line, .cm-scroller pre { white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+/* Additional high-specificity rules to cover Gradio/CodeMirror variants */
+.gradio-container .gr-code pre, .gradio-container .gr-code code, .gradio-container .gr-code textarea, .gradio-container .gr-code .cm-scroller { white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+.CodeMirror, .CodeMirror * { white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+/* JS fallback: enable line wrapping on CodeMirror instances and force inline styles on runtime */
+</style>
+<script>
+setTimeout(function(){
+  try{
+    // Try to enable CodeMirror lineWrapping for classic instances
+    document.querySelectorAll('.CodeMirror').forEach(function(cmEl){
+      try{ if(cmEl.CodeMirror && cmEl.CodeMirror.setOption) cmEl.CodeMirror.setOption('lineWrapping', true); }catch(e){}
+      try{ if(cmEl.editor && cmEl.editor.setOption) cmEl.editor.setOption('lineWrapping', true); }catch(e){}
+    });
+    // Force inline style for CM6 containers
+    document.querySelectorAll('.cm-scroller, .cm-content, .cm-line').forEach(function(el){
+      try{ el.style.whiteSpace = 'pre-wrap'; el.style.overflowWrap = 'anywhere'; el.style.wordBreak = 'break-word'; }catch(e){}
+    });
+  }catch(e){console.warn('wrap-fallback error', e);} 
+}, 250);
+</script>
+
 .wb-controls .btn{background:#f3f4f6;padding:6px;border-radius:6px}
 </style>
 <!-- Jump-to-line modal markup -->
