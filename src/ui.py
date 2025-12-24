@@ -434,34 +434,43 @@ def run_model(prompt: str, model: str, temperature: float, is_running_state: boo
 
 
 def handle_action_json(action_json: str):
-    """Handle an action JSON (used by JS bridge). Returns an HTML snippet (toast or formatted error)."""
+    """Handle an action JSON (used by JS bridge). ALWAYS returns a 4-tuple:
+       (toast_html, prompt_editor_update, prompt_editor_text_update, wrap_status_update)
+    """
     try:
         payload = json.loads(action_json or '{}')
     except Exception:
         payload = {}
+    default = (show_toast('Unrecognized action','warn'), gr.update(), gr.update(), gr.update(value='unknown'))
     if not payload or 'action' not in payload:
-        return show_toast('Unrecognized action','warn')
+        return default
+
     act = payload.get('action')
     if act == 'retry':
         rid = payload.get('retry_id')
-        return wb.perform_retry(rid)
-    elif act == 'open_folder':
+        res = wb.perform_retry(rid)
+        toast = res if isinstance(res, str) else show_toast(str(res))
+        return toast, gr.update(), gr.update(), gr.update(value='retry')
+
+    if act == 'open_folder':
         path = payload.get('path')
         ok, msg = wb.open_folder(path)
-        return show_toast(msg, 'info' if ok else 'error')
-    elif act in ('switch_to_textbox_auto', 'switch_to_textbox'):
+        return show_toast(msg, 'info' if ok else 'error'), gr.update(), gr.update(), gr.update(value='open_folder')
+
+    if act in ('switch_to_textbox_auto', 'switch_to_textbox'):
         content = payload.get('content', '')
-        # Hide code editor, show wrapped textbox with content
-        return show_toast('Switched to wrapped textbox', 'info'), gr.update(visible=False), gr.update(value=content, visible=True), gr.update(value='wrapped', visible=True)
-    elif act == 'switch_to_code':
+        status_val = 'autofallback' if act == 'switch_to_textbox_auto' else 'wrapped'
+        return show_toast('Switched to wrapped textbox', 'info'), gr.update(visible=False), gr.update(value=content, visible=True), gr.update(value=status_val)
+
+    if act == 'switch_to_code':
         content = payload.get('content', '')
-        # Show code editor, hide wrapped textbox
-        return show_toast('Switched to Code editor', 'info'), gr.update(value=content, visible=True), gr.update(visible=False), gr.update(value='editor', visible=True)
-    elif act == 'wrap_status':
+        return show_toast('Switched to Code editor', 'info'), gr.update(value=content, visible=True), gr.update(visible=False), gr.update(value='editor')
+
+    if act == 'wrap_status':
         st = payload.get('status','unknown')
         return show_toast(f'Wrap status: {st}', 'info' if st=='ok' else 'warn'), gr.update(), gr.update(), gr.update(value=st)
-    else:
-        return show_toast('Unknown action','warn')
+
+    return default
 
 
 # Module-level helpers for confirm modal logic (extracted so they are unit-testable)
@@ -854,7 +863,7 @@ def create_app():
           # best-effort wiring; if components not in scope, ignore
           pass
 
-        wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html, prompt_editor, prompt_editor_text])
+        wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html, prompt_editor, prompt_editor_text, wrap_status_html])
         
         def _switch_to_textbox(code_content):
             return gr.update(visible=False), gr.update(value=code_content, visible=True), show_toast('Switched to wrapped textbox', 'info')
