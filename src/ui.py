@@ -10,6 +10,7 @@ This file provides a compact Gradio UI that restores the core app flows:
 The goal is small, testable building blocks that can be extended gradually.
 """
 from typing import Tuple
+import os
 import gradio as gr
 from src.indexer import get_world_tree, get_world_files
 from src.runner import run_ollama_gen
@@ -431,13 +432,77 @@ def create_app():
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown("### 📜 Scripts")
-                        # Use the prompt tree from ollama_runner
-                        from .ollama_runner import walk_prompt_tree, list_prompts
-                        prompt_tree = walk_prompt_tree()
-                        script_selector = gr.Dropdown(choices=list_prompts(), label="Select Script")
+                        # Populate scripts from the workspace 'Narrative Scripts/' folder
+                        from pathlib import Path
+                        prompt_root = Path.cwd() / "Narrative Scripts"
+
+                        def _gather_top_categories():
+                            if not prompt_root.exists():
+                                return []
+                            return sorted([p.name for p in prompt_root.iterdir() if p.is_dir()])
+
+                        def _gather_subcategories(top_cat):
+                            if not prompt_root.exists():
+                                return []
+                            if not top_cat or top_cat == 'All':
+                                return []
+                            base = prompt_root / top_cat
+                            if not base.exists():
+                                return []
+                            return sorted([p.name for p in base.iterdir() if p.is_dir()])
+
+                        def _list_scripts(top_cat=None, sub_cat=None):
+                            scripts = []
+                            if not prompt_root.exists():
+                                return scripts
+                            # Resolve base path according to selection
+                            if not top_cat or top_cat == 'All':
+                                base = prompt_root
+                            else:
+                                base = prompt_root / top_cat
+                            if sub_cat and sub_cat != '(All)':
+                                base = base / sub_cat
+                            if not base.exists():
+                                return scripts
+                            for p in base.rglob("*"):
+                                if p.is_file() and p.suffix.lower() in (".md", ".txt"):
+                                    scripts.append(p.relative_to(prompt_root).as_posix())
+                            scripts.sort()
+                            return scripts
+
+                        # Handlers to update subcategory list and scripts list
+                        def _on_category_change(cat):
+                            subs = _gather_subcategories(cat)
+                            sub_choices = ['(All)'] + subs if subs else []
+                            scripts = _list_scripts(top_cat=(None if cat == 'All' else cat))
+                            return (
+                                gr.update(choices=sub_choices, value='(All)' if sub_choices else None, visible=bool(sub_choices)),
+                                gr.update(choices=scripts, value=(scripts[0] if scripts else None))
+                            )
+
+                        def _on_subcategory_change(sub, cat):
+                            scripts = _list_scripts(top_cat=(None if cat == 'All' else cat), sub_cat=(None if not sub or sub == '(All)' else sub))
+                            return gr.update(choices=scripts, value=(scripts[0] if scripts else None))
+
+                        # Initial population
+                        top_cats = _gather_top_categories()
+                        categories = ['All'] + top_cats if top_cats else ['All']
+                        initial_cat = categories[0] if categories else 'All'
+                        initial_subs = _gather_subcategories(initial_cat)
+                        subcat_dd = gr.Dropdown(choices=(['(All)'] + initial_subs if initial_subs else []), value='(All)' if initial_subs else None, label="Subcategory", visible=bool(initial_subs))
+                        category_dd = gr.Dropdown(choices=categories, value=initial_cat, label="Category")
+                        # Scripts selection (Category -> Subcategory -> Script)
+                        script_selector = gr.Dropdown(choices=_list_scripts(initial_cat, None), label="Select Script")
+
+                        # Wire changes: update subcategories and scripts when category changes; update scripts when subcategory changes
+                        category_dd.change(_on_category_change, inputs=[category_dd], outputs=[subcat_dd, script_selector])
+                        subcat_dd.change(_on_subcategory_change, inputs=[subcat_dd, category_dd], outputs=[script_selector])
+                        # Execution controls (Model, Temperature, Sync, Run)
+                        gr.Markdown('### 🧠 Execution')
                         model_dd = gr.Dropdown(choices=['mistral:latest','llama3:8b','deepseek-r1:7b'], value='mistral:latest', label='Model')
                         temp = gr.Slider(0.0, 1.5, value=0.7, step=0.05, label='Temperature')
-                        run_btn = gr.Button('▶ RUN MODEL', variant='primary')
+                        sync_models_btn = gr.Button('🔄 Sync Models', size='sm')
+                        run_btn = gr.Button('▶ RUN MODEL', variant='primary', size='lg')
                         
                     with gr.Column(scale=2):
                         gr.Markdown("### 🧠 Prompt & Output")
@@ -525,6 +590,30 @@ def create_app():
                 return f"Error loading script: {e}"
 
         script_selector.change(_on_script_select, inputs=[script_selector], outputs=[prompt_editor])
+        
+        def _sync_models():
+          """Query Ollama for available models and update the model dropdown."""
+          try:
+            from .ollama_runner import list_models_cli, load_models_from_cache
+            models = []
+            try:
+              models = list_models_cli() or []
+            except Exception:
+              models = []
+            if not models:
+              try:
+                models = load_models_from_cache() or []
+              except Exception:
+                models = []
+            # normalize to strings
+            models = [str(m) for m in models]
+            if not models:
+              return gr.update(choices=[], value=None), show_toast('No models found (check Ollama)', 'warn')
+            return gr.update(choices=models, value=(models[0] if models else None)), show_toast('Models synced', 'info')
+          except Exception as e:
+            return gr.update(choices=[], value=None), show_toast(f'Error syncing models: {e}', 'error')
+
+        sync_models_btn.click(_sync_models, inputs=[], outputs=[model_dd, toast_html])
         run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html])
         
         def _on_promote(output):
@@ -613,6 +702,7 @@ def create_app():
             banner = f"<div style='background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;font-family:system-ui;'><strong>📌 Context:</strong> Canonical File<br><strong>Path:</strong> {relpath}<br><strong>State:</strong> <span style='color:green;'>✅ Loaded version: {version_id}</span></div>"
             return content or '', banner, False, content or '', gr.update(visible=False)
 
+
         def _on_restore_draft(relpath):
             draft = wb.restore_draft(relpath)
             if not draft:
@@ -656,9 +746,23 @@ def create_app():
         assist_refactor.click(lambda *_: _on_ai_assist('Refactor', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
         assist_context.click(lambda *_: _on_ai_assist('Contextual', editor.value if hasattr(editor, 'value') else '', model_dd.value, temp.value), inputs=[], outputs=[assist_output, toast_html])
 
+        # When a script is selected in Generate tab, load its content into the Prompt Editor
+        try:
+          script_selector.change(_on_script_select, inputs=[script_selector], outputs=[prompt_editor])
+        except Exception:
+          # best-effort wiring; if components not in scope, ignore
+          pass
+
         wb_action_box.change(_on_action, inputs=[wb_action_box], outputs=[toast_html])
         debounce_slider.change(handle_debounce_change, inputs=[debounce_slider], outputs=[toast_html])
         auto_refresh.change(handle_auto_refresh_toggle, inputs=[auto_refresh], outputs=[toast_html])
+
+        # Auto-sync models when the page loads
+        try:
+          app.load(_sync_models, inputs=None, outputs=[model_dd, toast_html])
+        except Exception:
+          # If load wiring fails (older gradio), fall back to no-op
+          pass
 
     return app
 
