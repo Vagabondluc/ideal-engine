@@ -348,12 +348,16 @@ def run_model(prompt: str, model: str, temperature: float):
     ok, payload = run_ollama_gen(prompt, model, temperature, timeout=10)
     if ok:
         out = payload.get('stdout', '')
-        return out, show_toast('✅ Model ran successfully', 'info')
+        # Success: model_output gets only the text; status_html shows completion summary.
+        status = "<div style='padding:8px;border-left:4px solid #22c55e;background:#f0fdf4;'>✅ Completed</div>"
+        return out, show_toast('✅ Model ran successfully', 'info'), status
     else:
         # Build friendly error
         detail = payload.get('detail') or payload.get('error')
         rid = payload.get('retry_id')
-        return '', wb.format_error_enhanced('Model error', detail=str(detail), retry_id=rid, show_advanced=False)
+        # On error: model_output remains empty; status_html owns the error UI (retry, details).
+        status = wb.format_error_enhanced('Model error', detail=str(detail), retry_id=rid, show_advanced=False)
+        return '', show_toast('❌ Model failed', 'error'), status
 
 
 def handle_action_json(action_json: str):
@@ -508,6 +512,9 @@ def create_app():
                         gr.Markdown("### 🧠 Prompt & Output")
                         prompt_editor = gr.Code(language='markdown', lines=10, interactive=True, label="Prompt Editor")
                         model_output = gr.Code(language='markdown', lines=15, interactive=False, label="Model Output (Read-only)")
+                        # Execution telemetry / status is separate from the model output.
+                        # `model_output` must only contain model text. `status_html` owns errors, timing, retries.
+                        status_html = gr.HTML('', label='Execution Status')
                         with gr.Row():
                             promote_btn = gr.Button("📥 Promote to World Database")
                             clear_gen_btn = gr.Button("🗑 Clear")
@@ -614,7 +621,7 @@ def create_app():
             return gr.update(choices=[], value=None), show_toast(f'Error syncing models: {e}', 'error')
 
         sync_models_btn.click(_sync_models, inputs=[], outputs=[model_dd, toast_html])
-        run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html])
+        run_btn.click(lambda p, m, t: run_model(p, m, t), inputs=[prompt_editor, model_dd, temp], outputs=[model_output, toast_html, status_html])
         
         def _on_promote(output):
             if not output:
