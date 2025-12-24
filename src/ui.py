@@ -344,25 +344,20 @@ def save_file(relpath: str, content: str):
         return wb.format_error_enhanced('Save failed', detail=str(e)), content, wb.get_world_tree(), wb.get_activity_log_html()
 
 def run_model(prompt: str, model: str, temperature: float, is_running_state: bool):
-    """Non-streaming run handler. Returns final result immediately.
+    """Execute Ollama and return model output text only.
 
-    Outputs shape: (model_output_text, toast_html, status_html, is_running_bool)
-    Execution state is scoped to this single function; Gradio resolves immediately on return.
+    This function returns ONLY the final text output. Gradio resolves immediately.
+    Status, toasts, and execution state are NOT outputs of this function.
     """
     try:
         ok, payload = run_ollama_gen(prompt, model, temperature, timeout=120)
         if ok:
             out = payload.get('stdout', '')
-            status = "<div style='padding:8px;border-left:4px solid #22c55e;background:#f0fdf4;'>✅ Completed</div>"
-            return out, show_toast('✅ Model ran successfully', 'info'), status, False
+            return out
         else:
-            detail = payload.get('detail') or payload.get('error')
-            rid = payload.get('retry_id')
-            status = wb.format_error_enhanced('Model error', detail=str(detail), retry_id=rid, show_advanced=False)
-            return '', show_toast('❌ Model failed', 'error'), status, False
-    except Exception as e:
-        status = wb.format_error_enhanced('Model error', detail=str(e), show_advanced=False)
-        return '', show_toast('❌ Model failed', 'error'), status, False
+            return ''
+    except Exception:
+        return ''
 
 
 def handle_action_json(action_json: str):
@@ -628,8 +623,9 @@ def create_app():
             return gr.update(choices=[], value=None), show_toast(f'Error syncing models: {e}', 'error')
 
         sync_models_btn.click(_sync_models, inputs=[], outputs=[model_dd, toast_html])
-        # run_model is a generator that yields running-state then final outputs.
-        run_btn.click(run_model, inputs=[prompt_editor, model_dd, temp, is_running], outputs=[model_output, toast_html, status_html, is_running])
+        # CRITICAL: run_btn outputs ONLY model_output. Status and is_running are not execution outputs.
+        # This prevents Gradio from binding multiple components to the same long-running task.
+        run_btn.click(run_model, inputs=[prompt_editor, model_dd, temp, is_running], outputs=[model_output])
         
         def _on_promote(output):
             if not output:
