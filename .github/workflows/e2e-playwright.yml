@@ -5,6 +5,12 @@ on: [workflow_dispatch]
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        use_python_fallback: [ 'true', 'false' ]
+    env:
+      # Default handshake token for E2E; override via repo secret in production
+      WB_E2E_HANDSHAKE: ${{ secrets.WB_E2E_HANDSHAKE }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up Node.js
@@ -25,8 +31,14 @@ jobs:
         python -m pip install -r requirements.txt || true
     - name: Start test app
       run: |
+        # Export handshake token and start app; rely on global-setup to also spawn if needed
+        export WB_E2E_HANDSHAKE="${{ env.WB_E2E_HANDSHAKE || '1' }}"
+        export USE_PYTHON_FALLBACK=${{ matrix.use_python_fallback }}
         python -m src.start_test_app & sleep 3
     - name: Run Playwright tests
+      env:
+        USE_PYTHON_FALLBACK: ${{ matrix.use_python_fallback }}
+        WB_E2E_HANDSHAKE: ${{ env.WB_E2E_HANDSHAKE || '1' }}
       run: |
         cd e2e/playwright
         npx playwright test --config=playwright.config.ts
