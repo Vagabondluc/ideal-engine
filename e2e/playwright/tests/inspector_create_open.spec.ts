@@ -114,20 +114,25 @@ test('create -> open -> inspector flow (validation -> inline error -> focus -> s
   }
 
   if (!dynFound) {
-    // Fallback: call server-side handler directly to produce trace and response
-    try {
-      const cp = require('child_process');
-      const script = path.join(process.cwd(), 'py_helpers', 'call_save_action.py');
-      const py = cp.execSync(`python "${script}" "${uuid}" ""`, { encoding: 'utf8', maxBuffer: 1024 * 1024, cwd: path.join(process.cwd(), '..', '..') });
-      console.log('py handler stdout:', py);
-      const m = py.match(/handleDynamicSaveResponse\((\{[\s\S]*?\})\)/);
-      if (m) {
-        const j = m[1];
-        try { await page.evaluate((s) => { try{ if(window.handleDynamicSaveResponse) window.handleDynamicSaveResponse(JSON.parse(s)); }catch(e){ console.warn('apply dyn resp err', e); } }, j); } catch (e) { console.warn('eval dyn apply err', e); }
-        // If no per-row errors returned, apply a manual inline error so we can continue
-        try { const parsed = JSON.parse(j); if (parsed && parsed.ok === false && (!parsed.firstInvalidKey && Object.keys(parsed.rowErrors || {}).length === 0)) { await page.evaluate(() => { try{ const el = document.querySelector('[data-key="name"]'); if(el){ const err = el.closest('.wb-inspector-row')?.querySelector('.wb-inspector-row-error'); if(err){ err.innerText = "Field 'name' is required"; err.style.display = 'block'; } el.focus(); } }catch(e){ console.warn('manual inline err apply err', e); } }); } } catch(e){}
-      }
-    } catch (e) { console.warn('py fallback err', e); }
+    const usePyFallback = (process.env.USE_PYTHON_FALLBACK === undefined) || (process.env.USE_PYTHON_FALLBACK === 'true');
+    if (usePyFallback) {
+      // Fallback: call server-side handler directly to produce trace and response
+      try {
+        const cp = require('child_process');
+        const script = path.join(process.cwd(), 'py_helpers', 'call_save_action.py');
+        const py = cp.execSync(`python "${script}" "${uuid}" ""`, { encoding: 'utf8', maxBuffer: 1024 * 1024, cwd: path.join(process.cwd(), '..', '..') });
+        console.log('py handler stdout:', py);
+        const m = py.match(/handleDynamicSaveResponse\((\{[\s\S]*?\})\)/);
+        if (m) {
+          const j = m[1];
+          try { await page.evaluate((s) => { try{ if(window.handleDynamicSaveResponse) window.handleDynamicSaveResponse(JSON.parse(s)); }catch(e){ console.warn('apply dyn resp err', e); } }, j); } catch (e) { console.warn('eval dyn apply err', e); }
+          // If no per-row errors returned, apply a manual inline error so we can continue
+          try { const parsed = JSON.parse(j); if (parsed && parsed.ok === false && (!parsed.firstInvalidKey && Object.keys(parsed.rowErrors || {}).length === 0)) { await page.evaluate(() => { try{ const el = document.querySelector('[data-key="name"]'); if(el){ const err = el.closest('.wb-inspector-row')?.querySelector('.wb-inspector-row-error'); if(err){ err.innerText = "Field 'name' is required"; err.style.display = 'block'; } el.focus(); } }catch(e){ console.warn('manual inline err apply err', e); } }); } } catch(e){}
+        }
+      } catch (e) { console.warn('py fallback err', e); }
+    } else {
+      console.warn('USE_PYTHON_FALLBACK not enabled; skipping subprocess fallback for dynamic save');
+    }
   }
 
   // wait for inline error and focus

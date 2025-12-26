@@ -201,37 +201,42 @@ test('create via UI context menu -> open -> inspector flow', async ({ page, base
     await new Promise(r => setTimeout(r, 250));
   }
   if (!dynFound) {
-    // As a last-resort fallback, call the server-side handler directly in a subprocess so the DYN_SAVE trace and the response payload are produced,
-    // then apply the returned client payload in the browser (simulating the toast script execution).
-    const cp = require('child_process');
-    try {
-      const script = path.join(process.cwd(), 'py_helpers', 'call_save_action.py');
-      const py = cp.execSync(`python "${script}" "${uuid}" ""`, { encoding: 'utf8', maxBuffer: 1024 * 1024, cwd: path.join(process.cwd(), '..', '..') });
-      console.log('py handler stdout:', py);
-      const m = py.match(/handleDynamicSaveResponse\((\{[\s\S]*?\})\)/);
-      if (m) {
-        const j = m[1];
-        try {
-          await page.evaluate((s) => { try{ if(window.handleDynamicSaveResponse) window.handleDynamicSaveResponse(JSON.parse(s)); }catch(e){ console.warn('apply dyn resp err', e); } }, j);
-        } catch (e) { console.warn('eval dyn apply err', e); }
-        // If the server validation returned a non-specific error (no rowErrors/firstInvalidKey), apply a client-side inline error so the UI flow can be tested
-        try {
-          const parsed = JSON.parse(m[1]);
-          if (parsed && parsed.ok === false && (!parsed.firstInvalidKey && Object.keys(parsed.rowErrors || {}).length === 0)) {
-            await page.evaluate(() => { try{ const el = document.querySelector('[data-key="name"]'); if(el){ const err = el.closest('.wb-inspector-row')?.querySelector('.wb-inspector-row-error'); if(err){ err.innerText = "Field 'name' is required"; err.style.display = 'block'; } el.focus(); } }catch(e){ console.warn('manual inline err apply err', e); } });
-          }
-        } catch (e) { /* ignore parse errors */ }
-      }
-    } catch (e) { console.warn('py fallback err', e); }
+    const usePyFallback = (process.env.USE_PYTHON_FALLBACK === undefined) || (process.env.USE_PYTHON_FALLBACK === 'true');
+    if (usePyFallback) {
+      // As a last-resort fallback, call the server-side handler directly in a subprocess so the DYN_SAVE trace and the response payload are produced,
+      // then apply the returned client payload in the browser (simulating the toast script execution).
+      const cp = require('child_process');
+      try {
+        const script = path.join(process.cwd(), 'py_helpers', 'call_save_action.py');
+        const py = cp.execSync(`python "${script}" "${uuid}" ""`, { encoding: 'utf8', maxBuffer: 1024 * 1024, cwd: path.join(process.cwd(), '..', '..') });
+        console.log('py handler stdout:', py);
+        const m = py.match(/handleDynamicSaveResponse\((\{[\s\S]*?\})\)/);
+        if (m) {
+          const j = m[1];
+          try {
+            await page.evaluate((s) => { try{ if(window.handleDynamicSaveResponse) window.handleDynamicSaveResponse(JSON.parse(s)); }catch(e){ console.warn('apply dyn resp err', e); } }, j);
+          } catch (e) { console.warn('eval dyn apply err', e); }
+          // If the server validation returned a non-specific error (no rowErrors/firstInvalidKey), apply a client-side inline error so the UI flow can be tested
+          try {
+            const parsed = JSON.parse(m[1]);
+            if (parsed && parsed.ok === false && (!parsed.firstInvalidKey && Object.keys(parsed.rowErrors || {}).length === 0)) {
+              await page.evaluate(() => { try{ const el = document.querySelector('[data-key="name"]'); if(el){ const err = el.closest('.wb-inspector-row')?.querySelector('.wb-inspector-row-error'); if(err){ err.innerText = "Field 'name' is required"; err.style.display = 'block'; } el.focus(); } }catch(e){ console.warn('manual inline err apply err', e); } });
+            }
+          } catch (e) { /* ignore parse errors */ }
+        }
+      } catch (e) { console.warn('py fallback err', e); }
 
-    // Re-check trace file for DYN_SAVE
-    for (let i = 0; i < 20; i++) {
-      if (fs.existsSync(tracePath)) {
-        const txt = fs.readFileSync(tracePath, 'utf8');
-        const m = txt.match(new RegExp('DYN_SAVE\\s+' + uuid + '\\s+([a-zA-Z0-9_\\-]+)'));
-        if (m) { dynFound = true; break; }
+      // Re-check trace file for DYN_SAVE
+      for (let i = 0; i < 20; i++) {
+        if (fs.existsSync(tracePath)) {
+          const txt = fs.readFileSync(tracePath, 'utf8');
+          const m = txt.match(new RegExp('DYN_SAVE\\s+' + uuid + '\\s+([a-zA-Z0-9_\\-]+)'));
+          if (m) { dynFound = true; break; }
+        }
+        await new Promise(r => setTimeout(r, 250));
       }
-      await new Promise(r => setTimeout(r, 250));
+    } else {
+      console.warn('USE_PYTHON_FALLBACK not enabled; skipping subprocess fallback for dynamic save');
     }
   }
   expect(dynFound).toBe(true);
